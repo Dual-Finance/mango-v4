@@ -3021,6 +3021,7 @@ dependencies = [
  "solana-rpc",
  "solana-sdk",
  "spl-associated-token-account",
+ "staking_options",
  "thiserror",
  "tokio",
  "tokio-stream",
