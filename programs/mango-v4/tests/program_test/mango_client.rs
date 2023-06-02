@@ -1082,6 +1082,8 @@ fn token_edit_instruction_default() -> mango_v4::instruction::TokenEdit {
         reduce_only_opt: None,
         name_opt: None,
         force_close_opt: None,
+        staking_options_state_opt: None,
+        staking_options_expiration_opt: None,
     }
 }
 
@@ -1122,6 +1124,65 @@ impl ClientInstruction for TokenEditWeights {
             init_liab_weight_opt: Some(self.init_liab_weight),
             maint_asset_weight_opt: Some(self.maint_asset_weight),
             maint_liab_weight_opt: Some(self.maint_liab_weight),
+            ..token_edit_instruction_default()
+        };
+
+        let accounts = Self::Accounts {
+            group: self.group,
+            admin: self.admin.pubkey(),
+            mint_info: mint_info_key,
+            oracle: mint_info.oracle,
+        };
+
+        let mut instruction = make_instruction(program_id, &accounts, &instruction);
+        instruction
+            .accounts
+            .extend(mint_info.banks().iter().map(|&k| AccountMeta {
+                pubkey: k,
+                is_signer: false,
+                is_writable: true,
+            }));
+        (accounts, instruction)
+    }
+
+    fn signers(&self) -> Vec<TestKeypair> {
+        vec![self.admin]
+    }
+}
+
+pub struct TokenEditStakingOptions {
+    pub group: Pubkey,
+    pub admin: TestKeypair,
+    pub mint: Pubkey,
+
+    pub staking_options_state: Pubkey,
+    pub staking_options_expiration: u64,
+}
+
+#[async_trait::async_trait(?Send)]
+impl ClientInstruction for TokenEditStakingOptions {
+    type Accounts = mango_v4::accounts::TokenEdit;
+    type Instruction = mango_v4::instruction::TokenEdit;
+    async fn to_instruction(
+        &self,
+        account_loader: impl ClientAccountLoader + 'async_trait,
+    ) -> (Self::Accounts, instruction::Instruction) {
+        let program_id = mango_v4::id();
+
+        let mint_info_key = Pubkey::find_program_address(
+            &[
+                b"MintInfo".as_ref(),
+                self.group.as_ref(),
+                self.mint.as_ref(),
+            ],
+            &program_id,
+        )
+        .0;
+        let mint_info: MintInfo = account_loader.load(&mint_info_key).await.unwrap();
+
+        let instruction = Self::Instruction {
+            staking_options_state_opt: Some(self.staking_options_state),
+            staking_options_expiration_opt: Some(self.staking_options_expiration),
             ..token_edit_instruction_default()
         };
 
@@ -4199,5 +4260,154 @@ impl ClientInstruction for AltExtendInstruction {
 
     fn signers(&self) -> Vec<TestKeypair> {
         vec![self.admin, self.payer]
+    }
+}
+
+pub struct StakingOptionsExerciseInstruction {
+    pub amount: u64,
+    pub strike: u64,
+
+    pub group: Pubkey,
+    pub account: Pubkey,
+    pub owner: TestKeypair,
+    pub so_authority: Pubkey,
+    pub staking_options_state: Pubkey,
+    pub option_mint: Pubkey,
+    pub quote_mint: Pubkey,
+    pub staking_options_project_quote_account: Pubkey,
+    pub staking_options_fee_quote_account: Pubkey,
+    pub staking_options_base_vault: Pubkey,
+    pub base_mint: Pubkey,
+    pub base_bank: Pubkey,
+    pub quote_bank: Pubkey,
+    pub option_bank: Pubkey,
+}
+#[async_trait::async_trait(?Send)]
+impl ClientInstruction for StakingOptionsExerciseInstruction {
+    type Accounts = mango_v4::accounts::StakingOptionsExercise;
+    type Instruction = mango_v4::instruction::StakingOptionsExercise;
+    async fn to_instruction(
+        &self,
+        account_loader: impl ClientAccountLoader + 'async_trait,
+    ) -> (Self::Accounts, instruction::Instruction) {
+        let program_id = mango_v4::id();
+
+        let account = account_loader
+            .load_mango_account(&self.account)
+            .await
+            .unwrap();
+
+        let base_mint_info: MintInfo =
+            get_mint_info_by_mint(&account_loader, &account, self.base_mint).await;
+        let quote_mint_info: MintInfo =
+            get_mint_info_by_mint(&account_loader, &account, self.quote_mint).await;
+        let option_mint_info: MintInfo =
+            get_mint_info_by_mint(&account_loader, &account, self.option_mint).await;
+
+        let health_check_metas = derive_health_check_remaining_account_metas(
+            &account_loader,
+            &account,
+            Some(self.base_bank),
+            true,
+            None,
+        )
+        .await;
+
+        let instruction = Self::Instruction {
+            amount: self.amount,
+            strike: self.strike,
+        };
+
+        let accounts = Self::Accounts {
+            group: self.group,
+            account: self.account,
+            owner: self.owner.pubkey(),
+            so_authority: self.group,
+            staking_options_state: self.staking_options_state,
+            option_vault: option_mint_info.vaults[0],
+            option_mint: self.option_mint,
+            quote_vault: quote_mint_info.vaults[0],
+            staking_options_project_quote_account: self.staking_options_project_quote_account,
+            staking_options_fee_quote_account: self.staking_options_fee_quote_account,
+            staking_options_base_vault: self.staking_options_base_vault,
+            base_vault: base_mint_info.vaults[0],
+            base_bank: self.base_bank,
+            quote_bank: self.quote_bank,
+            option_bank: self.option_bank,
+            token_program: Token::id(),
+            staking_options_program: staking_options::id(),
+        };
+
+        let mut instruction = make_instruction(program_id, &accounts, &instruction);
+        // Add oracles and banks for health checking.
+        instruction.accounts.extend(health_check_metas.into_iter());
+        (accounts, instruction)
+    }
+
+    fn signers(&self) -> Vec<TestKeypair> {
+        vec![self.owner]
+    }
+}
+
+pub struct StakingOptionsLiqInstruction {
+    pub liqee: Pubkey,
+    pub liqor: Pubkey,
+    pub liqor_owner: TestKeypair,
+
+    pub asset_token_index: TokenIndex,
+    pub asset_bank_index: usize,
+    pub liab_token_index: TokenIndex,
+    pub liab_bank_index: usize,
+    pub max_liab_transfer: I80F48,
+}
+#[async_trait::async_trait(?Send)]
+impl ClientInstruction for StakingOptionsLiqInstruction {
+    type Accounts = mango_v4::accounts::StakingOptionsLiq;
+    type Instruction = mango_v4::instruction::StakingOptionsLiq;
+    async fn to_instruction(
+        &self,
+        account_loader: impl ClientAccountLoader + 'async_trait,
+    ) -> (Self::Accounts, instruction::Instruction) {
+        let program_id = mango_v4::id();
+        let instruction = Self::Instruction {
+            asset_token_index: self.asset_token_index,
+            liab_token_index: self.liab_token_index,
+            max_liab_transfer: self.max_liab_transfer,
+        };
+
+        let liqee = account_loader
+            .load_mango_account(&self.liqee)
+            .await
+            .unwrap();
+        let liqor = account_loader
+            .load_mango_account(&self.liqor)
+            .await
+            .unwrap();
+        let health_check_metas = derive_liquidation_remaining_account_metas(
+            &account_loader,
+            &liqee,
+            &liqor,
+            self.asset_token_index,
+            self.asset_bank_index,
+            self.liab_token_index,
+            self.liab_bank_index,
+        )
+        .await;
+
+        let accounts = Self::Accounts {
+            group: liqee.fixed.group,
+            liqee: self.liqee,
+            liqor: self.liqor,
+            liqor_owner: self.liqor_owner.pubkey(),
+        };
+
+        let mut instruction = make_instruction(program_id, &accounts, &instruction);
+        instruction.accounts.extend(health_check_metas.into_iter());
+
+        (accounts, instruction)
+    }
+
+    fn signers(&self) -> Vec<TestKeypair> {
+        vec![self.liqor_owner]
     }
 }

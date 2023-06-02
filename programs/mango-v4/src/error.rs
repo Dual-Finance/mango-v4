@@ -103,6 +103,8 @@ pub enum MangoError {
     InvalidHealthAccountCount,
     #[msg("would self trade")]
     WouldSelfTrade,
+    #[msg("staking option invariant violated")]
+    StakingOptionsError,
 }
 
 impl MangoError {

@@ -89,8 +89,13 @@ pub fn token_register(
         deposit_weight_scale_start_quote: f64::MAX,
         reduce_only: 0,
         force_close: 0,
-        reserved: [0; 2118],
+        // Can only set something to be a staking option when editing because
+        // that is when reduce_only is set.
+        staking_options_state: Pubkey::default(),
+        staking_options_expiration: 0,
+        reserved: [0; 2078],
     };
+
     require_gt!(bank.max_rate, MINIMUM_MAX_RATE);
 
     let oracle_price =

@@ -184,6 +184,8 @@ pub mod mango_v4 {
         reduce_only_opt: Option<u8>,
         name_opt: Option<String>,
         force_close_opt: Option<bool>,
+        staking_options_state_opt: Option<Pubkey>,
+        staking_options_expiration_opt: Option<u64>,
     ) -> Result<()> {
         #[cfg(feature = "enable-gpl")]
         instructions::token_edit(
@@ -212,6 +214,8 @@ pub mod mango_v4 {
             reduce_only_opt,
             name_opt,
             force_close_opt,
+            staking_options_state_opt,
+            staking_options_expiration_opt,
         )?;
         Ok(())
     }
@@ -1141,6 +1145,35 @@ pub mod mango_v4 {
     pub fn benchmark(ctx: Context<Benchmark>) -> Result<()> {
         #[cfg(feature = "enable-gpl")]
         instructions::benchmark(ctx)?;
+        Ok(())
+    }
+
+    ///
+    /// Staking options
+    ///
+    pub fn staking_options_exercise(
+        ctx: Context<StakingOptionsExercise>,
+        amount: u64,
+        strike: u64,
+    ) -> Result<()> {
+        #[cfg(feature = "enable-gpl")]
+        instructions::staking_options_exercise(ctx, amount, strike)?;
+        Ok(())
+    }
+
+    pub fn staking_options_liq(
+        ctx: Context<StakingOptionsLiq>,
+        asset_token_index: TokenIndex,
+        liab_token_index: TokenIndex,
+        max_liab_transfer: I80F48,
+    ) -> Result<()> {
+        #[cfg(feature = "enable-gpl")]
+        instructions::staking_options_liq(
+            ctx,
+            asset_token_index,
+            liab_token_index,
+            max_liab_transfer,
+        )?;
         Ok(())
     }
 }

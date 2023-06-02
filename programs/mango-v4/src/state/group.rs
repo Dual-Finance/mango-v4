@@ -190,6 +190,8 @@ pub enum IxGate {
     TokenForceCloseBorrowsWithToken = 49,
     PerpForceClosePosition = 50,
     GroupWithdrawInsuranceFund = 51,
+    StakingOptionsExercise = 52,
+    StakingOptionsLiq = 53,
     // NOTE: Adding new variants requires matching changes in ts and the ix_gate_set instruction.
 }
 

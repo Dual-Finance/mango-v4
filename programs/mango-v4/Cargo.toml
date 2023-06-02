@@ -43,6 +43,7 @@ solana-program = { workspace = true }
 solana-sdk = { workspace = true, default-features = false, optional = true }
 solana-security-txt = "1.1.0"
 static_assertions = "1.1"
+staking_options = { version = "0.1.0", features = [ "no-entrypoint", "cpi"] }
 switchboard-program = ">=0.2.0"
 switchboard-v2 = "0.1.17"
 
