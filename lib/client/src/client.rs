@@ -42,6 +42,8 @@ use solana_sdk::signature::{Keypair, Signature};
 use solana_sdk::sysvar;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, signer::Signer};
 
+use staking_options::program::StakingOptions as StakingOptionsProgram;
+
 // very close to anchor_client::Client, which unfortunately has no accessors or Clone
 #[derive(Clone, Debug)]
 pub struct Client {
@@ -1224,6 +1226,164 @@ impl MangoClient {
             data: anchor_lang::InstructionData::data(&mango_v4::instruction::TokenLiqBankruptcy {
                 max_liab_transfer,
             }),
+        };
+        self.send_and_confirm_owner_tx(vec![ix]).await
+    }
+
+    pub async fn staking_options_liq(
+        &self,
+        liqee: (&Pubkey, &MangoAccountValue),
+        asset_token_index: TokenIndex,
+        liab_token_index: TokenIndex,
+        max_liab_transfer: I80F48,
+    ) -> anyhow::Result<Signature> {
+        let health_remaining_ams = self
+            .derive_liquidation_health_check_remaining_account_metas(
+                liqee.1,
+                vec![],
+                &[asset_token_index, liab_token_index],
+            )
+            .await
+            .unwrap();
+
+        let ix = Instruction {
+            program_id: mango_v4::id(),
+            accounts: {
+                let mut ams = anchor_lang::ToAccountMetas::to_account_metas(
+                    &mango_v4::accounts::StakingOptionsLiq {
+                        group: self.group(),
+                        liqee: *liqee.0,
+                        liqor: self.mango_account_address,
+                        liqor_owner: self.owner(),
+                    },
+                    None,
+                );
+                ams.extend(health_remaining_ams);
+                ams
+            },
+            data: anchor_lang::InstructionData::data(&mango_v4::instruction::TokenLiqWithToken {
+                asset_token_index,
+                liab_token_index,
+                max_liab_transfer,
+            }),
+        };
+        self.send_and_confirm_owner_tx(vec![ix]).await
+    }
+
+    pub async fn staking_options_exercise(
+        &self,
+        option_mint: Pubkey,
+        amount: u64,
+        strike: u64,
+    ) -> anyhow::Result<Signature> {
+        // Use the option_mint to lookup the option_bank.
+        let option_token = self.context.token_by_mint(&option_mint)?;
+        let option_token_index = option_token.token_index;
+
+        // Use the option_bank to lookup the staking_options_state
+        let option_bank = self.first_bank(option_token_index).await?;
+        let option_bank_key = self.context.mint_info(option_token_index).first_bank();
+
+        // Lookup staking_options_state to get so_name.
+        let staking_options_state_key: Pubkey = option_bank.staking_options_state;
+        let staking_options_state = account_fetcher_fetch_anchor_account::<staking_options::State>(
+            &*self.account_fetcher,
+            &staking_options_state_key,
+        )
+        .await?;
+        let so_name: String = staking_options_state.so_name;
+
+        // Using so_name and staking_options_state and strike, we get
+        // so_authority
+        // option_mint
+        // base_mint
+        // quote_mint
+        // staking_options_base_vault
+        // staking_options_project_quote_account
+        // staking_options_fee_quote_account
+        let so_authority: Pubkey = staking_options_state.authority;
+        let option_mint_key: Pubkey = Pubkey::find_program_address(
+            &[
+                staking_options::SO_MINT_SEED,
+                &staking_options_state_key.to_bytes(),
+                &strike.to_be_bytes(),
+            ],
+            &staking_options::ID,
+        )
+        .0;
+        let base_mint_key: Pubkey = staking_options_state.base_mint;
+        let quote_mint_key: Pubkey = staking_options_state.quote_mint;
+        let staking_options_base_vault_key: Pubkey = Pubkey::find_program_address(
+            &[
+                staking_options::SO_VAULT_SEED,
+                &so_name.as_bytes(),
+                &base_mint_key.to_bytes(),
+            ],
+            &staking_options::ID,
+        )
+        .0;
+        let staking_options_project_quote_account: Pubkey = staking_options_state.quote_account;
+
+        // Assume it is always the USDC account
+        let staking_options_fee_quote_account: Pubkey =
+            Pubkey::from_str("7bg4qdKinKMSaii2FY68GwoLCFtnaAP8RjxvhseAgmoF").unwrap();
+
+        // Using the base_mint, we get base_bank and base_vault
+        let base_token = self.context.token_by_mint(&base_mint_key)?;
+        let base_token_index = base_token.token_index;
+        let base_bank_key = self.context.mint_info(base_token_index).first_bank();
+        let base_vault = base_token.mint_info.first_vault();
+
+        // Using the quote_mint, we get quote_bank and quote_vault
+        let quote_token = self.context.token_by_mint(&quote_mint_key)?;
+        let quote_token_index = quote_token.token_index;
+        let quote_bank_key = self.context.mint_info(quote_token_index).first_bank();
+        let quote_vault = quote_token.mint_info.first_vault();
+
+        // Using the option_mint, we get option_vault and option_vault
+        let option_vault = option_token.mint_info.first_vault();
+
+        let health_remaining_ams = self
+            .derive_health_check_remaining_account_metas(
+                vec![option_token_index, base_token_index, quote_token_index], // affected tokens
+                vec![option_token_index, base_token_index, quote_token_index], // writable banks
+                vec![], // affected perp markets
+            )
+            .await
+            .unwrap();
+
+        let ix = Instruction {
+            program_id: mango_v4::id(),
+            accounts: {
+                let mut ams = anchor_lang::ToAccountMetas::to_account_metas(
+                    &mango_v4::accounts::StakingOptionsExercise {
+                        group: self.group(),
+                        account: self.mango_account_address,
+                        owner: self.owner(),
+                        staking_options_state: option_bank.staking_options_state,
+                        so_authority: so_authority,
+                        staking_options_project_quote_account:
+                            staking_options_project_quote_account,
+                        staking_options_fee_quote_account: staking_options_fee_quote_account,
+                        staking_options_base_vault: staking_options_base_vault_key,
+                        base_vault: base_vault,
+                        option_vault: option_vault,
+                        quote_vault: quote_vault,
+                        option_mint: option_mint_key,
+                        base_bank: base_bank_key,
+                        quote_bank: quote_bank_key,
+                        option_bank: option_bank_key,
+                        staking_options_program: StakingOptionsProgram::id(),
+                        token_program: Token::id(),
+                    },
+                    None,
+                );
+                ams.extend(health_remaining_ams);
+                ams
+            },
+            data: anchor_lang::InstructionData::data(
+                &mango_v4::instruction::StakingOptionsExercise { amount, strike },
+            ),
         };
         self.send_and_confirm_owner_tx(vec![ix]).await
     }

@@ -516,6 +516,72 @@ impl<'a> LiquidateHelper<'a> {
         Ok(Some(sig))
     }
 
+   // TODO: Liquidate staking options send tx
+
+   async fn staking_options_liq(&self) -> anyhow::Result<Option<Signature>> {
+    /*
+    if !self.health_cache.has_spot_assets() || !self.health_cache.has_spot_borrows() {
+        return Ok(None);
+    }
+    let tokens = self.tokens().await?;
+    let asset_token_index = tokens
+        .iter()
+        .rev()
+        .find(|(asset_token_index, _asset_price, asset_usdc_equivalent)| {
+            asset_usdc_equivalent.is_positive()
+                && self
+                    .allowed_asset_tokens
+                    .contains(&self.client.context.token(*asset_token_index).mint_info.mint)
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "mango account {}, has no asset tokens that are sellable for USDC: {:?}",
+                self.pubkey,
+                tokens
+            )
+        })?
+        .0;
+    let liab_token_index = tokens
+        .iter()
+        .find(|(liab_token_index, _liab_price, liab_usdc_equivalent)| {
+            liab_usdc_equivalent.is_negative()
+                && self
+                    .allowed_liab_tokens
+                    .contains(&self.client.context.token(*liab_token_index).mint_info.mint)
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "mango account {}, has no liab tokens that are purchasable for USDC: {:?}",
+                self.pubkey,
+                tokens
+            )
+        })?
+        .0;
+    let max_liab_transfer = self
+        .max_token_liab_transfer(liab_token_index, asset_token_index)
+        .await
+        .context("getting max_liab_transfer")?;
+    let sig = self
+        .client
+        .token_liq_with_token(
+            (self.pubkey, &self.liqee),
+            asset_token_index,
+            liab_token_index,
+            max_liab_transfer,
+        )
+        .await
+        .context("sending liq_token_with_token")?;
+    log::info!(
+        "Liquidated token with token for {}, maint_health was {}, tx sig {:?}",
+        self.pubkey,
+        self.maint_health,
+        sig
+    );
+    Ok(Some(sig))
+    */
+    Ok(None)
+}
+
     async fn send_liq_tx(&self) -> anyhow::Result<Option<Signature>> {
         // TODO: Should we make an attempt to settle positive PNL first?
         // The problem with it is that small market movements can continuously create
@@ -672,6 +738,85 @@ pub async fn maybe_liquidate_account(
             log::info!("could not refresh after liquidation: {}", e);
         }
     }
+
+    Ok(true)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn maybe_staking_options_liquidate_account(
+    mango_client: &MangoClient,
+    account_fetcher: &chain_data::AccountFetcher,
+    pubkey: &Pubkey,
+    config: &Config,
+) -> anyhow::Result<bool> {
+    let liqor_min_health_ratio = I80F48::from_num(config.min_health_ratio);
+
+    let account = account_fetcher.fetch_mango_account(pubkey)?;
+    let health_cache = health_cache::new(&mango_client.context, account_fetcher, &account)
+        .await
+        .context("creating health cache 1")?;
+    let maint_health = health_cache.health(HealthType::Maint);
+
+    let all_token_mints = HashSet::from_iter(
+        mango_client
+            .context
+            .tokens
+            .values()
+            .map(|c| c.mint_info.mint),
+    );
+
+    // TODO: Use the staking options threshold and check if there is an expiring staking option bank.
+    if !health_cache.is_liquidatable() {
+        return Ok(false);
+    }
+
+    log::trace!(
+        "possible candidate: {}, with owner: {}, maint health: {}",
+        pubkey,
+        account.fixed.owner,
+        maint_health,
+    );
+
+    /*
+    // Fetch a fresh account and re-compute
+    // This is -- unfortunately -- needed because the websocket streams seem to not
+    // be great at providing timely updates to the account data.
+    let account = account_fetcher.fetch_fresh_mango_account(pubkey).await?;
+    let health_cache = health_cache::new(&mango_client.context, account_fetcher, &account)
+        .await
+        .context("creating health cache 2")?;
+    if !health_cache.is_liquidatable() {
+        return Ok(false);
+    }
+    let maint_health = health_cache.health(HealthType::Maint);
+    // try liquidating
+    let maybe_txsig = LiquidateHelper {
+        client: mango_client,
+        account_fetcher,
+        pubkey,
+        liqee: &account,
+        health_cache: &health_cache,
+        maint_health,
+        liqor_min_health_ratio,
+        allowed_asset_tokens: all_token_mints.clone(),
+        allowed_liab_tokens: all_token_mints,
+    }
+    .send_liq_tx()
+    .await?;
+    if let Some(txsig) = maybe_txsig {
+        let slot = account_fetcher.transaction_max_slot(&[txsig]).await?;
+        if let Err(e) = account_fetcher
+            .refresh_accounts_via_rpc_until_slot(
+                &[*pubkey, mango_client.mango_account_address],
+                slot,
+                config.refresh_timeout,
+            )
+            .await
+        {
+            log::info!("could not refresh after liquidation: {}", e);
+        }
+    }
+    */
 
     Ok(true)
 }
