@@ -435,3 +435,24 @@ pub struct TokenForceCloseBorrowsWithTokenLog {
     pub liab_price: i128,
     pub fee_factor: i128,
 }
+
+#[event]
+pub struct StakingOptionExerciseLog {
+    pub mango_group: Pubkey,
+    pub mango_account: Pubkey,
+    pub amount: u64,
+    pub staking_options_state: Pubkey,
+}
+
+#[event]
+pub struct StakingOptionsLiqLog {
+    pub mango_group: Pubkey,
+    pub liqee: Pubkey,
+    pub liqor: Pubkey,
+    pub asset_token_index: u16,
+    pub liab_token_index: u16,
+    pub asset_transfer: i128, // I80F48
+    pub liab_transfer: i128,  // I80F48
+    pub asset_price: i128,    // I80F48
+    pub liab_price: i128,     // I80F48
+}

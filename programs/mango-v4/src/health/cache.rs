@@ -1105,14 +1105,32 @@ pub fn new_health_cache(
             oracle: oracle_price,
             stable: bank.stable_price(),
         };
+
         // Use the liab price for computing weight scaling, because it's pessimistic and
         // causes the most unfavorable scaling.
         let liab_price = prices.liab(HealthType::Init);
+        let mut scaled_init_asset_weight = bank.scaled_init_asset_weight(liab_price);
+
+        // Check if it is a StakingOption and if so, drop init weight to zero in
+        // the last hour. Use init weight because that is what the staking
+        // options liquidation uses. Do not need to adjust scaled asset weight
+        // because there is no max collateral on these tokens.
+        if bank.staking_options_expiration > 0 {
+            let now_ts: u64 = Clock::get()?.unix_timestamp.try_into().unwrap();
+            if bank.staking_options_expiration < now_ts {
+                continue;
+            }
+            let time_remaining: u64 = bank.staking_options_expiration - now_ts;
+            if time_remaining < 60 * 60 {
+                scaled_init_asset_weight = I80F48::from_num(0);
+            }
+        }
+
         token_infos.push(TokenInfo {
             token_index: bank.token_index,
             maint_asset_weight: bank.maint_asset_weight,
             init_asset_weight: bank.init_asset_weight,
-            init_scaled_asset_weight: bank.scaled_init_asset_weight(liab_price),
+            init_scaled_asset_weight: scaled_init_asset_weight,
             maint_liab_weight: bank.maint_liab_weight,
             init_liab_weight: bank.init_liab_weight,
             init_scaled_liab_weight: bank.scaled_init_liab_weight(liab_price),

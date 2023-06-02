@@ -14,6 +14,7 @@ pub use cookies::*;
 pub use mango_client::*;
 pub use serum::*;
 pub use solana::*;
+pub use staking_options_helper::*;
 pub use utils::*;
 
 pub mod cookies;
@@ -21,6 +22,7 @@ pub mod mango_client;
 pub mod mango_setup;
 pub mod serum;
 pub mod solana;
+pub mod staking_options_helper;
 pub mod utils;
 
 trait AddPacked {
@@ -223,6 +225,12 @@ impl TestContextBuilder {
         serum_program_id
     }
 
+    pub fn add_staking_options_program(&mut self) -> Pubkey {
+        self.test
+            .add_program("staking_options", staking_options::id(), None);
+        staking_options::id()
+    }
+
     pub fn add_margin_trade_program(&mut self) -> MarginTradeCookie {
         let program = Pubkey::from_str("J83w4HKfqxwcq3BEMMkPFSppX3gqekLyLJBexebFVkix").unwrap();
         let token_account = TestKeypair::new();
@@ -257,6 +265,7 @@ impl TestContextBuilder {
         let mints = self.create_mints();
         let users = self.create_users(&mints);
         let serum_program_id = self.add_serum_program();
+        let staking_options_program_id = self.add_staking_options_program();
 
         let solana = self.start().await;
 
@@ -264,12 +273,17 @@ impl TestContextBuilder {
             solana: solana.clone(),
             program_id: serum_program_id,
         });
+        let staking_options = Arc::new(StakingOptionsCookie {
+            solana: solana.clone(),
+            program_id: staking_options_program_id,
+        });
 
         TestContext {
             solana: solana.clone(),
             mints,
             users,
             serum,
+            staking_options,
         }
     }
 
@@ -294,6 +308,7 @@ pub struct TestContext {
     pub mints: Vec<MintCookie>,
     pub users: Vec<UserCookie>,
     pub serum: Arc<SerumCookie>,
+    pub staking_options: Arc<StakingOptionsCookie>,
 }
 
 impl TestContext {

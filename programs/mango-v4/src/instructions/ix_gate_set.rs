@@ -51,6 +51,8 @@ pub fn ix_gate_set(ctx: Context<IxGateSet>, ix_gate: u128) -> Result<()> {
     log_if_changed(&group, ix_gate, IxGate::Serum3PlaceOrder);
     log_if_changed(&group, ix_gate, IxGate::Serum3RegisterMarket);
     log_if_changed(&group, ix_gate, IxGate::Serum3SettleFunds);
+    log_if_changed(&group, ix_gate, IxGate::StakingOptionsExercise);
+    log_if_changed(&group, ix_gate, IxGate::StakingOptionsLiq);
     log_if_changed(&group, ix_gate, IxGate::StubOracleClose);
     log_if_changed(&group, ix_gate, IxGate::StubOracleCreate);
     log_if_changed(&group, ix_gate, IxGate::StubOracleSet);

@@ -127,6 +127,16 @@ pub struct Bank {
     /// See scaled_init_asset_weight().
     pub deposit_weight_scale_start_quote: f64,
 
+    // If included, this bank is for a staking option and this is the
+    // SOState which will contain info on the option like expiration and display name.
+    // Pubkey::default() means no staking_options_state. Primarily included here
+    // to make UI able to display more information. The expiration is used in
+    // this program to help determine conditions around ITM option expiration.
+    pub staking_options_state: Pubkey,
+
+    // Expiration is in seconds since epoch.
+    pub staking_options_expiration: u64,
+
     // We have 3 modes
     // 0 - Off,
     // 1 - ReduceDepositsReduceBorrows - standard
@@ -136,7 +146,7 @@ pub struct Bank {
     pub force_close: u8,
 
     #[derivative(Debug = "ignore")]
-    pub reserved: [u8; 2118],
+    pub reserved: [u8; 2078],
 }
 const_assert_eq!(
     size_of::<Bank>(),
@@ -165,7 +175,9 @@ const_assert_eq!(
         + 8
         + 1
         + 1
-        + 2118
+        + 32
+        + 8
+        + 2078
 );
 const_assert_eq!(size_of::<Bank>(), 3064);
 const_assert_eq!(size_of::<Bank>() % 8, 0);
@@ -227,7 +239,9 @@ impl Bank {
             deposit_weight_scale_start_quote: f64::MAX,
             reduce_only: 0,
             force_close: 0,
-            reserved: [0; 2118],
+            staking_options_state: existing_bank.staking_options_state,
+            staking_options_expiration: existing_bank.staking_options_expiration,
+            reserved: [0; 2078],
         }
     }
 

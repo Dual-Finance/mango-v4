@@ -194,6 +194,49 @@ impl SolanaCookie {
         return keypair.pubkey();
     }
 
+    pub async fn create_mint(&self, authority: &Pubkey) -> Pubkey {
+        let keypair = TestKeypair::new();
+        let rent = self.rent.minimum_balance(spl_token::state::Mint::LEN);
+
+        let instructions = [
+            system_instruction::create_account(
+                &self.context.borrow().payer.pubkey(),
+                &keypair.pubkey(),
+                rent,
+                spl_token::state::Mint::LEN as u64,
+                &spl_token::id(),
+            ),
+            spl_token::instruction::initialize_mint(
+                &spl_token::id(),
+                &keypair.pubkey(),
+                authority,
+                None, // freeze_authority_pubkey
+                6,    // decimals
+            )
+            .unwrap(),
+        ];
+
+        self.process_transaction(&instructions, Some(&[keypair]))
+            .await
+            .unwrap();
+        return keypair.pubkey();
+    }
+
+    // Requires that the authority for the mint is the default payer.
+    pub async fn mint_to(&self, mint: &Pubkey, token_account: &Pubkey, amount: u64) {
+        let instructions = [spl_token::instruction::mint_to(
+            &spl_token::id(),
+            mint,
+            token_account,
+            &self.context.borrow().payer.pubkey(),
+            &[&self.context.borrow().payer.pubkey()],
+            amount,
+        )
+        .unwrap()];
+
+        self.process_transaction(&instructions, None).await.unwrap();
+    }
+
     // Note: Only one table can be created per authority per slot!
     pub async fn create_address_lookup_table(
         &self,

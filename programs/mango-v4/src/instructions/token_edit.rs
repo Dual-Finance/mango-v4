@@ -39,6 +39,8 @@ pub fn token_edit(
     reduce_only_opt: Option<u8>,
     name_opt: Option<String>,
     force_close_opt: Option<bool>,
+    staking_options_state_opt: Option<Pubkey>,
+    staking_options_expiration_opt: Option<u64>,
 ) -> Result<()> {
     let group = ctx.accounts.group.load()?;
 
@@ -284,6 +286,12 @@ pub fn token_edit(
                 require_group_admin = true;
             }
             bank.reduce_only = reduce_only;
+
+            // Staking options cannot be borrowed, so enforce reduce only.
+            require!(
+                bank.reduce_only == 2 || bank.staking_options_state == Pubkey::default(),
+                MangoError::StakingOptionsError
+            );
         };
 
         if let Some(name) = name_opt.as_ref() {
@@ -302,6 +310,27 @@ pub fn token_edit(
                 u8::from(force_close)
             );
             bank.force_close = u8::from(force_close);
+            require_group_admin = true;
+        };
+
+        if let Some(staking_options_state) = staking_options_state_opt {
+            msg!(
+                "Staking Options State: old - {:?}, new - {:?}",
+                bank.staking_options_state,
+                staking_options_state
+            );
+            bank.staking_options_state = staking_options_state;
+            require!(bank.reduce_only == 2, MangoError::StakingOptionsError);
+        };
+
+        if let Some(staking_options_expiration) = staking_options_expiration_opt {
+            msg!(
+                "Staking Options Expiration: old - {:?}, new - {:?}",
+                bank.staking_options_expiration,
+                staking_options_expiration
+            );
+            bank.staking_options_expiration = staking_options_expiration;
+            require!(bank.reduce_only == 2, MangoError::StakingOptionsError);
             require_group_admin = true;
         };
     }
